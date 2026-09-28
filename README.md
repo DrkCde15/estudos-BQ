@@ -1,6 +1,14 @@
 # Estudos BigQuery
 
-Projeto: `engdta`
+Projeto: `engdta` (override via `GCP_PROJECT`)
+
+Pré-requisitos:
+```bash
+.venv/bin/python -c "import google.cloud.bigquery; print('ok')"
+gcloud auth list  # conta ativa
+# Se o Python reclamar de credenciais (ADC):
+gcloud auth application-default login
+```
 
 ## Aula 01 — `aula01.py`: dataset, tabela e labels
 
@@ -9,19 +17,77 @@ Cria (idempotente, `exists_ok=True`):
 - Tabela `AZURE` vazia, sem schema (equiv. `bq mk --table`)
 
 Fluxo de labels:
-1. `set`: `table.labels = {...}` + `update_table(["labels"])`
-2. `append`: merge `dict(table.labels or {})` + `update()` — `update_table` faz merge, não replace
+1. `set`: `table.labels = {...}` + `update_table(["labels"])` (substitui)
+2. `append`: merge manual `dict(table.labels or {})` + `update()` — o merge é feito no código, não pelo `update_table`
 3. `delete um`: `table.labels = {"year": None}` — `pop()` ou `{}` **não** apagam
 4. `delete todos`: `{k: None for k in table.labels}`
 
-Deletes destrutivos (comentados no código):
+Atenção — deletes destrutivos **ativos** em `aula01.py:51-52` (não comentados):
 ```python
 client.delete_table(table_ref, not_found_ok=True)
 client.delete_dataset(dataset_ref, delete_contents=True, not_found_ok=True)
 ```
+Todo run apaga tabela + dataset ao final. Comente essas linhas se quiser validar depois com `bq show`.
 
 Validação:
 ```bash
-python3 aula01.py
+.venv/bin/python aula01.py
 bq show --project_id=engdta staging.AZURE
 ```
+
+## Aula 02 — `aula02.py`: evolução de schema (DDL) idempotente
+
+Alvo: `engdta.staging.biq_copy`. Funções em `aula02.py`:
+- `ensure_dataset` / `ensure_table`: criação idempotente (`exists_ok=True`)
+- `ensure_columns`: adiciona `saved2:BOOLEAN`, `permlink2:STRING`, `keep_me:STRING` (todas NULLABLE) **só se faltarem** — re-run sem essa checagem falharia com coluna duplicada
+- `insert_sample_rows`: DML `INSERT INTO ... VALUES (@saved, @link)` com query parameters, inserindo só `permlink2` novos
+- `drop_columns`: `ALTER TABLE ... DROP COLUMN IF EXISTS` (um por coluna); `query().result()` já espera até DONE, sem `sleep`/`reload`
+
+Limites do sandbox (sem billing), já tratados no código:
+- `insert_rows_json` (streaming `insertAll`) → `403 Streaming insert is not allowed` — por isso usa DML
+- DML sem billing → `403 billingNotEnabled` — o insert é pulado com aviso, sem abortar o DDL
+- `DROP COLUMN` da última coluna → `400 Cannot DROP last column` — por isso existe a âncora `keep_me`
+
+Run e validação:
+```bash
+.venv/bin/python aula02.py
+bq show --project_id=engdta --schema staging.biq_copy
+bq query --project_id=engdta 'SELECT * FROM `engdta.staging.biq_copy` LIMIT 10'
+```
+
+## Módulo 1 (03–06) — Leitura, DDL e carga batch ✅ testado no sandbox
+
+Formato misto: cada aula é um `.py` idempotente que executa SQL via `client.query()` + comenta o equivalente `bq CLI`.
+
+- **Aula 03 — `aula03.py`: query jobs.** `dry_run` para estimar bytes antes de executar, `SELECT * LIMIT`, query parametrizada (`@prefix`). Tudo read-only.
+  ```bash
+  .venv/bin/python aula03.py
+  bq query --dry_run --project_id=engdta 'SELECT * FROM `engdta.staging.biq_copy` LIMIT 10'
+  ```
+- **Aula 04 — `aula04.py`: DDL.** `CREATE TABLE IF NOT EXISTS staging.aula04_demo` + `CREATE OR REPLACE VIEW staging.v_biq_copy`. Re-run converge, sem erro.
+  ```bash
+  .venv/bin/python aula04.py
+  bq show --project_id=engdta staging.aula04_demo
+  ```
+- **Aula 05 — `aula05.py`: batch vs streaming.** `load_table_from_json` com `WRITE_TRUNCATE` (batch, permitido no sandbox) vs `insert_rows_json` (streaming, 403). Re-run substitui, não duplica.
+  ```bash
+  .venv/bin/python aula05.py
+  bq show --project_id=engdta staging.aula05_batch
+  ```
+- **Aula 06 — `aula06.py`: introspecção e custo.** `list_datasets`/`list_tables`, `get_table` (`num_rows`/`num_bytes`), `INFORMATION_SCHEMA.TABLES`, tudo read-only.
+  ```bash
+  .venv/bin/python aula06.py
+  bq ls --project_id=engdta engdta:staging
+  ```
+
+## Roadmap até a aula 30
+
+- **Módulo 1 (03–06)** ✅ — Leitura, DDL, carga batch, catálogo (feito, testado).
+- **Módulo 2 (07–10)** — Particionamento e clustering via DDL, `WHERE` que poda partição, `EXPLAIN`/`dry_run` comparando scan, views materializadas (conceito; criação só com billing).
+- **Módulo 3 (11–14)** — Qualidade: `NOT NULL`/`UNIQUE` (limites do BQ), checagens com `ASSERT`/`COUNTIF`, `MERGE` idempotente (pulado sem billing, como aula02), quarentena de linhas inválidas.
+- **Módulo 4 (15–18)** — Rotinas e agendamento: `CREATE PROCEDURE`/`SCHEDULED QUERY` (sintaxe + deploy manual), parâmetros de data lógica, backfill por janela.
+- **Módulo 5 (19–22)** — Custos e quotas: etiquetas/labels por job, `INFORMATION_SCHEMA.JOBS` para auditar bytes, limites do sandbox vs billing, alertas.
+- **Módulo 6 (23–26)** — Segurança: IAM por dataset, authorized views, máscara de PII (`SHA256`/`REGEXP_REPLACE`), regionamento.
+- **Módulo 7 (27–30)** — Projeto final: pipeline staging→marts só com DDL+batch+views, dicionário de dados, runbook e checklist de produção.
+
+Regra de todas as aulas: idempotente + sandbox-first (pula com aviso o que exigir billing).
