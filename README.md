@@ -80,14 +80,54 @@ Formato misto: cada aula é um `.py` idempotente que executa SQL via `client.que
   bq ls --project_id=engdta engdta:staging
   ```
 
+## Módulo 2 (07–08) — Envio de arquivos ✅ testado no sandbox
+
+- **Aula 07 — `aula07.py`: upload de arquivos reais.** Arquivos em `data/` (`clientes.csv`, `clientes.json`, `clientes.parquet`, 3 linhas cada) enviados via `load_table_from_file` com `WRITE_TRUNCATE` + schema explícito. Demo `autodetect=True` no CSV real: inferiu `id INTEGER NULLABLE` vs declarado `REQUIRED` (lição: prefira schema declarado).
+  ```bash
+  .venv/bin/python aula07.py
+  bq show --project_id=engdta staging.aula07_csv staging.aula07_json staging.aula07_parquet
+  bq load --source_format=CSV --skip_leading_rows=1 --project_id=engdta engdta:staging.aula07_csv ./data/clientes.csv id:INTEGER,nome:STRING,ativo:BOOLEAN
+  ```
+- **Aula 08 — `aula08.py`: carga particionada + GCS.** Tabela particionada por `dia` (DDL), batch load com datas relativas a hoje (partições antigas expiram ~60d no dataset — datas fixas de janeiro sumiram no teste), `dry_run` provando a poda (72 bytes cheio vs 24 filtrado). GCS via `load_table_from_uri` atrás de `BQ_GCS_URI` (pula com aviso sem bucket).
+  ```bash
+  .venv/bin/python aula08.py
+  BQ_GCS_URI='gs://BUCKET/dados/*.parquet' .venv/bin/python aula08.py
+  bq show --project_id=engdta staging.aula08_part
+  ```
+
 ## Roadmap até a aula 30
 
 - **Módulo 1 (03–06)** ✅ — Leitura, DDL, carga batch, catálogo (feito, testado).
-- **Módulo 2 (07–10)** — Particionamento e clustering via DDL, `WHERE` que poda partição, `EXPLAIN`/`dry_run` comparando scan, views materializadas (conceito; criação só com billing).
-- **Módulo 3 (11–14)** — Qualidade: `NOT NULL`/`UNIQUE` (limites do BQ), checagens com `ASSERT`/`COUNTIF`, `MERGE` idempotente (pulado sem billing, como aula02), quarentena de linhas inválidas.
-- **Módulo 4 (15–18)** — Rotinas e agendamento: `CREATE PROCEDURE`/`SCHEDULED QUERY` (sintaxe + deploy manual), parâmetros de data lógica, backfill por janela.
-- **Módulo 5 (19–22)** — Custos e quotas: etiquetas/labels por job, `INFORMATION_SCHEMA.JOBS` para auditar bytes, limites do sandbox vs billing, alertas.
-- **Módulo 6 (23–26)** — Segurança: IAM por dataset, authorized views, máscara de PII (`SHA256`/`REGEXP_REPLACE`), regionamento.
-- **Módulo 7 (27–30)** — Projeto final: pipeline staging→marts só com DDL+batch+views, dicionário de dados, runbook e checklist de produção.
+- **Módulo 2 (07–08)** ✅ — Upload de arquivos + particionamento (feito, testado).
+## Módulo 3 (09–12) — Clustering, poda, plano e MVs ✅ testado no sandbox
+
+- **Aula 09 — `aula09.py`: particionamento + clustering.** `CREATE TABLE ... PARTITION BY dia CLUSTER BY regiao` + batch load de 9 linhas (datas relativas a hoje, cf. aula08). Re-run converge.
+  ```bash
+  .venv/bin/python aula09.py
+  bq show --project_id=engdta staging.aula09_cluster
+  ```
+- **Aula 10 — `aula10.py`: poda em números.** `dry_run` × 4 filtros: cheio 279 B, partição 93 B (33%), partição+cluster 93 B, filtro fora do cluster 279 B (100% — não podou).
+  ```bash
+  .venv/bin/python aula10.py
+  ```
+- **Aula 11 — `aula11.py`: plano de execução.** `GROUP BY` com `use_query_cache=False` (sem isso o 2º run vem do cache: 0 bytes, sem plano) + leitura dos stages (`READ/AGGREGATE/WRITE`, `READ/SORT/WRITE`, shuffle por stage).
+  ```bash
+  .venv/bin/python aula11.py
+  ```
+- **Aula 12 — `aula12.py`: materialized view.** `CREATE MATERIALIZED VIEW` funcionou no sandbox (refresh automático pode exigir billing); fallback `v_aula09_totais` + `dry_run` mostrando que view lógica não economiza scan.
+  ```bash
+  .venv/bin/python aula12.py
+  bq show --project_id=engdta staging.mv_aula09
+  ```
+
+## Roadmap até a aula 30
+
+- **Módulo 1 (03–06)** ✅ — Leitura, DDL, carga batch, catálogo (feito, testado).
+- **Módulo 2 (07–08)** ✅ — Upload de arquivos + particionamento (feito, testado).
+- **Módulo 3 (09–12)** ✅ — Clustering, poda, plano de execução, MVs (feito, testado).
+- **Módulo 4 (13–16)** — Qualidade: `NOT NULL`/`UNIQUE` (limites do BQ), checagens `COUNTIF`, `MERGE` idempotente (pula sem billing), quarentena de inválidas.
+- **Módulo 5 (17–20)** — Rotinas e agendamento: `CREATE PROCEDURE`/`SCHEDULED QUERY`, data lógica, backfill por janela.
+- **Módulo 6 (21–24)** — Custos e segurança: `INFORMATION_SCHEMA.JOBS`, labels por job, IAM por dataset, máscara de PII, regionamento.
+- **Módulo 7 (25–30)** — Projeto final: pipeline staging→marts só com DDL+batch+views, dicionário, runbook e checklist de produção.
 
 Regra de todas as aulas: idempotente + sandbox-first (pula com aviso o que exigir billing).
