@@ -57,21 +57,14 @@ Nota: ~13,5 MB em CSV no git é aceitável; se os arquivos crescerem, mova para 
 - **02 ✅ `aula02.sql` — Perfil das colunas:** cardinalidade, tops, nulos (`COUNTIF`), faixa de idades.
 - **03 ✅ `aula03.sql` — Agregados por UF:** casos por `SG_UF_NOT`, divergência notificação×residência, % do total (window).
 - **04 ✅ `aula04.sql` — Tempo:** casos por `SEM_NOT`, por mês (`DATE_TRUNC`), coerência semana×mês.
-- **05 — Idade/sexo:** faixas de `NU_IDADE_N` com `CASE`, cruzado com `CS_SEXO`.
-- **06 — Qualidade:** nulos por coluna (`COUNTIF(x IS NULL)`), datas futuras, idades impossíveis.
-- **07 — Filtros que podam:** `SELECT` só de colunas necessárias + `dry_run` comparando `SELECT *` vs lista explícita.
-- **08 — Views:** `CREATE OR REPLACE VIEW aula_bq.v_srag_resumo` com o agregado da aula 03.
-- **09 — Tabela derivada particionada:** `CREATE TABLE aula_bq.srag_por_dia PARTITION BY dia AS SELECT ...` + `dry_run` com/sem filtro de partição.
-- **10 — Clustering:** `CLUSTER BY SG_UF_NOT` na derivada + comparativo de bytes.
-- **11 — Auditoria de custo:** `INFORMATION_SCHEMA.JOBS` — bytes por query rodada no projeto.
-- **12 — Qualidade avançada:** duplicadas por `NU_NOTIFIC` (`GROUP BY ... HAVING COUNT(*) > 1`), quarentena em tabela à parte.
-- **13–16 — Janelas e coortes:** `ROW_NUMBER`, `LAG` (intervalo notificação→sintomas), coorte semanal.
-- **17–20 — Disponibilização (Evidence):** conexão `BigQuery`/`us` já salva; sources versionadas em `sources/`, ex.: `select SG_UF_NOT, count(*) n from engdta.aula_bq.srag_2026 group by 1`.
-- **21–30 — Projeto final:** dicionário de dados, pipeline `aula_bq` → views/marts, runbook e checklist de produção.
-
-Regras: todo `.sql` roda com `bq query < aulaNN.sql`; DML (`INSERT`/`MERGE`) só com billing ativo (sandbox retorna 403 — ver histórico do projeto); `dry_run` antes de qualquer scan novo.
-
-## Notas de ambiente
-
-- O dataset antigo `staging` (aulas `.py`) não existe mais; o curso recomeçou em `aula_bq` com dados reais.
-- Conexão BI (Evidence): `BigQuery`/`SERVICE_ACCOUNT`/`us`, chave em `~/evidence-bq-key.json` (fora do repo, `chmod 600`).
+- **05 ✅ `aula05.sql` — JOINs:** `INNER` srag×consolidado por UF, `LEFT` achando UFs sem SRAG, anti-join reverso (chave fora do consolidado).
+- **06 — Idade/sexo:** faixas de `NU_IDADE_N` com `CASE`, cruzado com `CS_SEXO`.
+- **07 — Qualidade:** nulos por coluna (`COUNTIF(x IS NULL)`), datas futuras, idades impossíveis.
+- **08 — Filtros que podam:** `SELECT` só de colunas necessárias + `dry_run` comparando `SELECT *` vs lista explícita.
+- **09 — Views:** `CREATE OR REPLACE VIEW aula_bq.v_srag_resumo` com o agregado da aula 03.
+- **10 — Tabela derivada particionada:** `CREATE TABLE aula_bq.srag_por_dia PARTITION BY dia AS SELECT ...` + `dry_run` com/sem filtro de partição.
+- **11 — Clustering:** `CLUSTER BY SG_UF_NOT` na derivada + comparativo de bytes.
+- **12 — Auditoria de custo:** `INFORMATION_SCHEMA.JOBS` — bytes por query rodada no projeto.
+- **13 — Qualidade avançada:** duplicadas por `NU_NOTIFIC` (`GROUP BY ... HAVING COUNT(*) > 1`), quarentena em tabela à parte.
+- **14–17 — Janelas e coortes:** `ROW_NUMBER`, `LAG` (intervalo notificação→sintomas), coorte semanal.
+- **18–21 — Disponibilização (Evidence):** conexão `BigQuery`/`us` já salva; sources versionadas em `sources/`, ex.: `select SG_UF_NOT, count(*) n from engdta.aula_bq.srag_2026 group by 1`.
